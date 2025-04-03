@@ -1,0 +1,90 @@
+techm api
+
+api_url = "/create_single_tkt"
+api_details = "This api to create ticket for one user"
+api_tags = ["TechM APIS"]
+
+@app.post(api_url, tags=api_tags, responses=handleResponse(), summary=api_details)
+async def create_single_tkt(request: Request):
+    request_dict = await request.json()
+    logger.info(f"received request data: {request_dict}")
+    print(request_dict)
+    
+    try:
+        from src.api_orchestrator import APIOrchestrator
+        variables = {
+            'empname': request_dict.get('empName'),
+            'mgr_id': request_dict.get('mgrMail'),
+            'doj': request_dict.get('doj'),
+            'div': request_dict.get('div'),
+            'req': request_dict.get('requester')
+        }
+        
+        apiobj = APIOrchestrator()
+        is_success, result = apiobj.create_single_service_request(variables)
+        logger.info(f"service request ceation result: {result}")
+        result = f"Request created sucessfully for Onbordaing Employee: {variables['empname']}"
+        return {"type": "text", "data": result}
+    except Exception as e:
+        logger.error(f"error occured: {str(e)}")
+        return {"type": "text", "data": "failed" }
+
+api orchestrator
+
+def create_single_service_request(self, variables: dict):
+        return self.zendesk_obj.create_single_service_request(variables)
+
+Zendesk operations:
+
+def create_single_service_request(self, variables: dict):
+
+        base_url=os.getenv('BASE_URL')
+        user=os.getenv('USER_ID')
+        password=os.getenv('Password')
+
+        quantity = 1
+        catalog_item_sys_id = "bf115af5db8095107667f674b996192a"
+        
+
+        add_to_cart_url = f'{base_url}/api/sn_sc/servicecatalog/items/{catalog_item_sys_id}/add_to_cart'
+        submit_order_url = f'{base_url}/api/sn_sc/servicecatalog/cart/submit_order'
+
+        headers = {"content-type": "application/json"}
+
+        add_to_cart_data = {
+            'sysparm_quantity': quantity,  # Adjust quantity if necessary
+            'variables': variables  # Include variables in the request
+        }
+        add_to_cart_response = requests.post(add_to_cart_url, data=json.dumps(add_to_cart_data), auth=(user, password), headers=headers, verify=False)
+        if add_to_cart_response.status_code == 200:
+            print(f"Item added to the cart successfully.")
+            cart_id = add_to_cart_response.json().get('result', {}).get('cart_id')
+            if cart_id:
+                print(f"Cart id is: {cart_id}")
+            else:
+                print("No cart sys_id returned. The item may not have been added properly.")
+        else:
+            print(f"Failed to add item to cart. Status code: {add_to_cart_response.status_code}, Response: {add_to_cart_response.text}")
+            cart_id = None
+    
+        # Step 2: Submit the Order (if item added successfully to cart)
+        if cart_id:
+            submit_order_data = {
+                'cart_id': cart_id  # The sys_id of the cart that holds the added item
+            }
+            submit_order_response = requests.post(submit_order_url, auth=(user, password), headers=headers, data=json.dumps(submit_order_data), verify=False)
+            if submit_order_response.status_code == 200:
+                print(f"Order submitted successfully.")
+                print(f"Response: {submit_order_response.json()}")
+            else:
+                print(f"Failed to submit order. Status code: {submit_order_response.status_code}, Response: {submit_order_response.text}")
+            submit_order_response_json = json.loads(submit_order_response.text)
+            request_id = submit_order_response_json.get('result', {}).get('request_id')
+            request_number = submit_order_response_json.get('result', {}).get('request_number')
+            sys_id = submit_order_response_json.get('result', {}).get('sys_id')
+            assistant_response = f"""Successfully created an Order
+            request_number: {request_number}
+            """
+            return True, {'status_code': submit_order_response.status_code, 'response_text': submit_order_response.text, 'request_id': request_id, 'cart_id': cart_id, 'request_number': request_number, 'sys_id': sys_id, 'wxassistant_res': assistant_response}
+    
+        return False, {}
